@@ -1,0 +1,147 @@
+<!-- <!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Sign Language Translator</title>
+    <style>
+        body { font-family: Arial, sans-serif; text-align: center; background: #f0f0f0; }
+        #video { border: 2px solid #333; margin: 10px; }
+        #canvas { position: absolute; top: 0; left: 0; z-index: 1; } /* Overlay for landmarks */
+        #sign { font-size: 48px; color: #007bff; margin: 20px; min-height: 60px; }
+        #status { color: #666; }
+    </style>
+</head>
+<body>
+    <h1>Sign Language Translator (ASL Alphabet Demo)</h1>
+    <p>Hold up your hand in ASL letters A, B, or C (or thumbs up/victory) in front of the camera.</p>
+    <video id="video" width="640" height="480" autoplay muted playsinline></video>
+    <canvas id="canvas" width="640" height="480"></canvas>
+    <div id="status">Initializing...</div>
+    <div id="sign">No sign detected</div>
+
+    <script src="https://cdn.jsdelivr.net/npm/@tensorflow/tfjs-core@4.17.0/dist/tf-core.min.js"></script>
+    <script src="https://cdn.jsdelivr.net/npm/@tensorflow/tfjs-backend-webgl@4.17.0/dist/tf-backend-webgl.min.js"></script>
+    <script src="https://cdn.jsdelivr.net/npm/@tensorflow-models/hand-pose-detection"></script>
+    <script src="https://cdn.jsdelivr.net/npm/@mediapipe/hands@0.4.1646424915/hands.min.js"></script>
+    <script src="https://cdn.jsdelivr.net/npm/fingerpose@0.1.0/dist/fingerpose.min.js"></script>
+    <script>
+        const video = document.getElementById('video');
+        const canvas = document.getElementById('canvas');
+        const ctx = canvas.getContext('2d');
+        const statusDiv = document.getElementById('status');
+        const signDiv = document.getElementById('sign');
+
+        const aSign = new fp.GestureDescription('A');
+        aSign.addCurl(fp.Finger.Thumb, fp.FingerCurl.NoCurl, 1.0);
+        aSign.addCurl(fp.Finger.Index, fp.FingerCurl.FullCurl, 1.0);
+        aSign.addCurl(fp.Finger.Middle, fp.FingerCurl.FullCurl, 1.0);
+        aSign.addCurl(fp.Finger.Ring, fp.FingerCurl.FullCurl, 1.0);
+        aSign.addCurl(fp.Finger.Pinky, fp.FingerCurl.FullCurl, 1.0);
+        aSign.addDirection(fp.Finger.Thumb, fp.FingerDirection.VerticalUp, 0.8);
+
+        const bSign = new fp.GestureDescription('B');
+        bSign.addCurl(fp.Finger.Thumb, fp.FingerCurl.FullCurl, 1.0);
+        bSign.addCurl(fp.Finger.Index, fp.FingerCurl.NoCurl, 1.0);
+        bSign.addCurl(fp.Finger.Middle, fp.FingerCurl.NoCurl, 1.0);
+        bSign.addCurl(fp.Finger.Ring, fp.FingerCurl.NoCurl, 1.0);
+        bSign.addCurl(fp.Finger.Pinky, fp.FingerCurl.NoCurl, 1.0);
+        bSign.addDirection(fp.Finger.Index, fp.FingerDirection.HorizontalRight, 0.7);
+
+        const cSign = new fp.GestureDescription('C');
+        cSign.addCurl(fp.Finger.Thumb, fp.FingerCurl.HalfCurl, 0.8);
+        cSign.addCurl(fp.Finger.Index, fp.FingerCurl.NoCurl, 1.0);
+        cSign.addCurl(fp.Finger.Middle, fp.FingerCurl.HalfCurl, 0.8);
+        cSign.addCurl(fp.Finger.Ring, fp.FingerCurl.FullCurl, 0.9);
+        cSign.addCurl(fp.Finger.Pinky, fp.FingerCurl.FullCurl, 0.9);
+        cSign.addDirection(fp.Finger.Index, fp.FingerDirection.DiagonalUpLeft, 0.6);
+
+        let detector; // Hand pose detector
+
+        // Setup webcam
+        async function setupWebcam() {
+            try {
+                statusDiv.textContent = 'Requesting camera access...';
+                const stream = await navigator.mediaDevices.getUserMedia({ video: { width: 640, height: 480 } });
+                video.srcObject = stream;
+                video.onloadedmetadata = () => {
+                    video.play();
+                    canvas.width = video.videoWidth;
+                    canvas.height = video.videoHeight;
+                    statusDiv.textContent = 'Camera ready! Loading model...';
+                };
+            } catch (err) {
+                statusDiv.textContent = 'Camera error: ' + err.message;
+                console.error('Webcam error:', err);
+            }
+        }
+
+        async function loadModel() {
+            try {
+                statusDiv.textContent = 'Downloading MediaPipe model (30-60s)...';
+                const model = handPoseDetection.SupportedModels.MediaPipeHands;
+                const detectorConfig = {
+                    runtime: 'mediapipe',
+                    solutionPath: 'https://cdn.jsdelivr.net/npm/@mediapipe/hands',
+                    modelType: 'full'
+                };
+                detector = await handPoseDetection.createDetector(model, detectorConfig);
+                statusDiv.textContent = 'Model loaded! Show your sign (try thumbs up).';
+                console.log('Model loaded successfully');
+            } catch (err) {
+                statusDiv.textContent = 'Model load failed: ' + err.message;
+                console.error('Model error:', err);
+            }
+        }
+
+        // Draw landmarks on canvas for visualization
+        function drawLandmarks(landmarks, handedness) {
+            ctx.clearRect(0, 0, canvas.width, canvas.height);
+            ctx.fillStyle = handedness === 'Left' ? 'green' : 'red';
+            ctx.lineWidth = 2;
+            landmarks.forEach(point => {
+                const x = point.x * canvas.width;
+                const y = point.y * canvas.height;
+                ctx.beginPath();
+                ctx.arc(x, y, 3, 0, 2 * Math.PI);
+                ctx.fill();
+            });
+        }
+
+        // Detection loop
+        function detectLoop() {
+            setInterval(async () => {
+                if (video.readyState === 4 && detector) {
+                    const hands = await detector.estimateHands(video);
+                    console.log('Hands detected:', hands.length);
+                    if (hands.length > 0) {
+                        const hand = hands[0];
+                        drawLandmarks(hand.keypoints, hand.handedness); // Visualize 2D keypoints
+                        const landmarks = hand.keypoints3D.map(kp => [kp.x, kp.y, kp.z]);
+                        const GE = new fp.GestureEstimator([
+                            fp.Gestures.VictoryGesture,
+                            fp.Gestures.ThumbsUpGesture,
+                            aSign,
+                            bSign,
+                            cSign
+                        ]);
+                        const estimatedGestures = GE.estimate(landmarks, 7.0); // Sync, threshold 7.0
+
+                        if (estimatedGestures.gestures.length > 0) {
+                            const maxGesture = estimatedGestures.gestures.reduce((prev, curr) => prev.score > curr.score ? prev : curr);
+                            signDiv.textContent = maxGesture.name + ` (${Math.round(maxGesture.score)}%)`;
+                        } else {
+                            signDiv.textContent = 'No sign detected';
+                        }
+                    } else {
+                        signDiv.textContent = 'No hand detected';
+                    }
+                }
+            }, 100); // Faster loop for smoother real-time
+        }
+
+        // Initialize
+        setupWebcam().then(() => loadModel().then(detectLoop));
+    </script>
+</body>
+</html> -->
