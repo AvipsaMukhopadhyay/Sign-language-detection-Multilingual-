@@ -2,5 +2,5 @@
 
 
 multillingual sign language detection
-DARASET : KAGGLE
-just reading images, predicting and testing with another image for now
+DATASET SOURCE: KAGGLE
+used ISL images and WASL videos for the prediction
