@@ -1,14 +1,4 @@
-"""
-Multilingual Sign Language Classifier
--------------------------------------
-- Trains on ISL (Indian Sign Language) images
-- Trains on WLASL (American Sign Language) videos
-- Prints true and predicted labels (no image saving)
-"""
 
-# --------------------------
-# IMPORTS
-# --------------------------
 import os
 import cv2
 import numpy as np
@@ -17,9 +7,6 @@ from tensorflow.keras import layers, models, optimizers, losses
 import json
 import random
 
-# --------------------------
-# CONFIGURATION
-# --------------------------
 DATASET_DIR_ISL = r"C:\Users\Avipsa\OneDrive\Desktop\Multilingual DL\ISL\Indian"
 DATASET_DIR_WLASL = r"C:\Users\Avipsa\Downloads\archive\dataset\SL"
 
@@ -28,13 +15,10 @@ MAX_FRAMES = 8
 BATCH_SIZE = 8
 EPOCHS = 5
 LEARNING_RATE = 1e-3
-NUM_WLASL_SAMPLES = 100  # keep small for testing
+NUM_WLASL_SAMPLES = 100 
 
 os.makedirs("saved_model", exist_ok=True)
 
-# --------------------------
-# IMAGE LOADER
-# --------------------------
 def load_image(path, size=(IMG_SIZE, IMG_SIZE)):
     img = cv2.imread(path)
     if img is None:
@@ -44,9 +28,7 @@ def load_image(path, size=(IMG_SIZE, IMG_SIZE)):
     img = img.astype(np.float32) / 255.0
     return img
 
-# --------------------------
-# VIDEO FRAME EXTRACTOR
-# --------------------------
+
 def extract_frames(video_path, max_frames=MAX_FRAMES, size=(IMG_SIZE, IMG_SIZE)):
     cap = cv2.VideoCapture(video_path)
     frames = []
@@ -67,9 +49,6 @@ def extract_frames(video_path, max_frames=MAX_FRAMES, size=(IMG_SIZE, IMG_SIZE))
         frames.append(np.zeros((size[0], size[1], 3), dtype=np.float32))
     return np.array(frames[:max_frames])
 
-# --------------------------
-# BUILD ISL DATASET
-# --------------------------
 def build_isl_samples(dataset_dir):
     classes = sorted([d for d in os.listdir(dataset_dir)
                       if os.path.isdir(os.path.join(dataset_dir, d))])
@@ -84,13 +63,10 @@ def build_isl_samples(dataset_dir):
                 labels.append(class_to_idx[c])
     return samples, labels, classes
 
-print("📂 Loading ISL dataset...")
+print(" Loading ISL dataset...")
 image_samples, image_labels, isl_classes = build_isl_samples(DATASET_DIR_ISL)
-print(f"✅ ISL: {len(image_samples)} images | {len(isl_classes)} classes")
+print(f"ISL: {len(image_samples)} images | {len(isl_classes)} classes")
 
-# --------------------------
-# BUILD WLASL DATASET
-# --------------------------
 def build_wlasl_samples(dataset_dir, max_samples=NUM_WLASL_SAMPLES):
     folders = sorted([d for d in os.listdir(dataset_dir)
                       if os.path.isdir(os.path.join(dataset_dir, d))])
@@ -112,10 +88,6 @@ def build_wlasl_samples(dataset_dir, max_samples=NUM_WLASL_SAMPLES):
 print("📂 Loading WLASL dataset...")
 video_samples, video_labels, wlasl_classes = build_wlasl_samples(DATASET_DIR_WLASL)
 print(f"✅ WLASL: {len(video_samples)} videos | {len(wlasl_classes)} classes")
-
-# --------------------------
-# COMBINE LABELS
-# --------------------------
 all_classes = isl_classes + wlasl_classes
 num_classes = len(all_classes)
 print(f"🌍 Total combined classes: {num_classes}")
@@ -123,9 +95,6 @@ print(f"🌍 Total combined classes: {num_classes}")
 with open("saved_model/label_mapping.json", "w") as f:
     json.dump(all_classes, f)
 
-# --------------------------
-# GENERATORS
-# --------------------------
 def image_generator():
     for path, label in zip(image_samples, image_labels):
         try:
@@ -158,9 +127,6 @@ video_ds = tf.data.Dataset.from_generator(
     )
 ).shuffle(200).batch(BATCH_SIZE).prefetch(tf.data.AUTOTUNE)
 
-# --------------------------
-# MODELS
-# --------------------------
 def build_cnn(input_shape=(IMG_SIZE, IMG_SIZE, 3), n_classes=num_classes):
     model = models.Sequential([
         layers.Conv2D(32, (3,3), activation='relu', input_shape=input_shape),
@@ -187,8 +153,6 @@ def build_cnn_lstm(input_shape=(MAX_FRAMES, IMG_SIZE, IMG_SIZE, 3), n_classes=nu
         layers.Dense(n_classes, activation='softmax')
     ])
     return model
-
-# Create & compile models
 image_model = build_cnn()
 video_model = build_cnn_lstm()
 
@@ -199,9 +163,6 @@ video_model.compile(optimizer=optimizers.Adam(learning_rate=LEARNING_RATE),
                     loss=losses.SparseCategoricalCrossentropy(),
                     metrics=['accuracy'])
 
-# --------------------------
-# TRAINING
-# --------------------------
 print("\n🚀 Training ISL image model...")
 image_model.fit(image_ds, epochs=EPOCHS)
 
@@ -211,11 +172,8 @@ video_model.fit(video_ds, epochs=EPOCHS)
 # Save models
 image_model.save("saved_model/isl_image_model.h5")
 video_model.save("saved_model/wlasl_video_model.h5")
-print("\n✅ Training complete. Models saved!")
+print("\n Training complete. Models saved!")
 
-# --------------------------
-# PREDICTION (Console Only)
-# --------------------------
 def predict_image(model, img_path):
     img = load_image(img_path)
     pred = model.predict(np.expand_dims(img, axis=0), verbose=0)[0]
@@ -228,7 +186,6 @@ def predict_video(model, video_path):
     idx = np.argmax(pred)
     return all_classes[idx], float(np.max(pred))
 
-# Random examples
 print("\n🔍 Testing predictions...\n")
 test_img_path = random.choice(image_samples)
 true_img_label = isl_classes[image_labels[image_samples.index(test_img_path)]]
@@ -239,3 +196,4 @@ test_vid_path = random.choice(video_samples)
 true_vid_label = wlasl_classes[video_labels[video_samples.index(test_vid_path)] - len(isl_classes)]
 pred_vid_label, conf_vid = predict_video(video_model, test_vid_path)
 print(f"🎬 WLASL → True: {true_vid_label} | Predicted: {pred_vid_label} | Confidence: {conf_vid:.2f}")
+
